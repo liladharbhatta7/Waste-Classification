@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Object Detection</title>
+  <style>
+    #outputCanvas {
+      display: block;
+      margin: auto;
+      border: 1px solid #ddd;
+    }
+    #uploadBtn {
+      margin-top: 10px;
+      display: block;
+      margin: 10px auto;
+    }
+  </style>
+</head>
+<body>
+  <video id="webcam" autoplay playsinline style="display:none;"></video>
+  <canvas id="outputCanvas"></canvas>
+  <input type="file" id="uploadBtn" accept="image/*">
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script>
+    const modelURL = 'models/model.json';
+    const metadataURL = 'models/metadata.json';
+
+    let model;
+    let labels = [];
+    const minConfidence = 0.5;
+
+    // Load the model and metadata
+    async function loadModel() {
+      console.log("Loading model...");
+      model = await tf.loadLayersModel(modelURL);
+      console.log("Model loaded successfully.");
+    }
+
+    async function loadMetadata() {
+      console.log("Loading metadata...");
+      const response = await fetch(metadataURL);
+      const metadata = await response.json();
+      labels = metadata.labels || [];
+      console.log("Metadata loaded:", labels);
+    }
+
+    let detectedBoxes = []; // Array to store detected objects and bounding boxes
+let colors = {}; // Object to store unique colors for each detected label
+
+async function detectObjects(videoElement, canvasElement) {
+  if (!model) return;
+
+  const ctx = canvasElement.getContext("2d");
+
+  // Capture video frame and preprocess
+  const inputTensor = tf.browser.fromPixels(videoElement)
+    .resizeNearestNeighbor([224, 224])
+    .expandDims(0)
+    .toFloat()
+    .div(tf.scalar(255)); // Normalize to [0, 1]
+
+  // Perform prediction
+  const predictions = model.predict(inputTensor);
+  const predictionArray = await predictions.array();
+
+  // Clear canvas and draw the video frame
+  ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+  ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+
+  // Process predictions and update detected objects
+  detectedBoxes = predictionArray[0]
+    .map((confidence, index) => ({
+      label: labels[index],
+      confidence,
+      x: Math.random() * canvasElement.width, // Replace with model output if available
+      y: Math.random() * canvasElement.height, // Replace with model output if available
+      width: 50 + Math.random() * 100, // Replace with model output if available
+      height: 50 + Math.random() * 100, // Replace with model output if available
+    }))
+    .filter(obj => obj.confidence > 0.5);
+
+  // Draw bounding boxes and labels
+  detectedBoxes.forEach(({ label, confidence, x, y, width, height }) => {
+    // Generate random color for each label if not already assigned
+    if (!colors[label]) {
+      colors[label] = `rgb(${Math.floor(Math.random() * 255)}, 
+                          ${Math.floor(Math.random() * 255)}, 
+                          ${Math.floor(Math.random() * 255)})`;
+    }
+
+    // Set stroke and fill colors
+    ctx.strokeStyle = colors[label];
+    ctx.lineWidth = 2;
+    ctx.fillStyle = colors[label];
+
+    // Draw bounding box
+    ctx.strokeRect(x, y, width, height);
+
+    // Draw label and confidence
+    ctx.font = "16px Arial";
+    ctx.fillText(
+      `${label}: ${(confidence * 100).toFixed(2)}%`,
+      x,
+      y > 20 ? y - 5 : y + 15
+    );
+  });
+
+  inputTensor.dispose();
+}
+
+
+
+    // Webcam initialization
+    async function startWebcam() {
+      const video = document.getElementById("webcam");
+      const canvas = document.getElementById("outputCanvas");
+
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+
+      video.addEventListener("loadeddata", () => {
+        console.log("Webcam stream started.");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        // Continuously render using requestAnimationFrame
+        const renderFrame = async () => {
+          await detectObjects(video, canvas);
+          requestAnimationFrame(renderFrame);
+        };
+        renderFrame(); // Start the render loop
+      });
+    }
+
+    // Image upload handling
+    async function handleImageUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const img = new Image();
+      const canvas = document.getElementById("outputCanvas");
+
+      img.onload = async () => {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+
+        await detectObjects(img, canvas);
+      };
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // Main function
+    async function main() {
+      await loadModel();
+      await loadMetadata();
+      await startWebcam();
+    }
+
+
+    
+    // Listen to image upload
+    document.getElementById("uploadBtn").addEventListener("change", handleImageUpload);
+
+    // Run the main function
+    main();
+
+
+
+  </script>
+</body>
+</html>
